@@ -1,0 +1,107 @@
+# import os
+# import requests
+# from requests.adapters import HTTPAdapter
+# from requests.packages.urllib3.util.retry import Retry
+# from celery import shared_task
+# from django.conf import settings
+
+# # Global requests Session for Connection Pooling
+# # This session will be kept alive across multiple task executions within the same worker,
+# # drastically reducing connection overhead.
+# brevo_session = requests.Session()
+
+# # Configure Retries for the Session (Handles brief network hiccups at connection level)
+# retry_strategy = Retry(
+#     total=3,
+#     backoff_factor=1,
+#     status_forcelist=[429, 500, 502, 503, 504],
+#     allowed_methods=["POST"]
+# )
+# adapter = HTTPAdapter(max_retries=retry_strategy)
+# brevo_session.mount("https://", adapter)
+# brevo_session.mount("http://", adapter)
+
+# # Define static headers containing the API Key
+# api_key = getattr(settings, 'BREVO_API_KEY', '')
+# brevo_session.headers.update({
+#     "accept": "application/json",
+#     "api-key": api_key,
+#     "content-type": "application/json"
+# })
+
+# @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 5})
+# def send_brevo_email(self, to_email, subject, html_content, sender_name="TradeRake"):
+#     """
+#     Optimized Celery task to send a transactional email via Brevo.
+#     Utilizes connection pooling and exponential backoff for retries.
+#     """
+#     sender_email = getattr(settings, 'BREVO_SENDER_EMAIL', 'noreply@traderake.com')
+    
+#     url = "https://api.brevo.com/v3/smtp/email"
+#     payload = {
+#         "sender": {
+#             "name": sender_name,
+#             "email": sender_email
+#         },
+#         "to": [
+#             {
+#                 "email": to_email
+#             }
+#         ],
+#         "subject": subject,
+#         "htmlContent": html_content
+#     }
+
+#     # Strict timeouts to prevent worker deadlocks (connect timeout, read timeout)
+#     response = brevo_session.post(url, json=payload, timeout=(3.0, 10.0))
+    
+#     # Raise an exception for 4xx/5xx responses to trigger Celery retry
+#     response.raise_for_status()
+    
+#     return response.json()
+
+# @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 5})
+# def send_brevo_sms(self, to_phone, text_content, sender_name="TradeRake"):
+#     """
+#     Optimized Celery task to send a transactional SMS via Brevo.
+#     Utilizes connection pooling and exponential backoff for retries.
+#     """
+#     url = "https://api.brevo.com/v3/transactionalSMS/sms"
+#     payload = {
+#         "type": "transactional",
+#         "unicodeEnabled": True,
+#         "sender": sender_name[:11], # Alphanumeric sender ID max length is 11 for SMS
+#         "recipient": to_phone,
+#         "content": text_content
+#     }
+
+#     # Strict timeouts
+#     response = brevo_session.post(url, json=payload, timeout=(3.0, 10.0))
+#     response.raise_for_status()
+    
+#     return response.json()
+
+
+# @shared_task
+# def send_activation_email(email, activation_link):
+#     """
+#     User activation email using the optimized Brevo email task.
+#     """
+#     subject = "Activate your TradeRake account"
+#     html_content = f"""
+#     <html>
+#         <body>
+#             <h2>Welcome to TradeRake!</h2>
+#             <p>Please click the link below to activate your account:</p>
+#             <p><a href="{activation_link}">Activate My Account</a></p>
+#         </body>
+#     </html>
+#     """
+#     # Delegate to the optimized brevo task
+#     send_brevo_email.delay(
+#         to_email=email,
+#         subject=subject,
+#         html_content=html_content
+#     )
+
+# ----------------------------------------------------------------------------------------
